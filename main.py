@@ -12,6 +12,10 @@ from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboard
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler, CallbackContext
 from database import Database
 from datetime import datetime
+import http.server
+import socketserver
+import re
+import threading
 
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -952,5 +956,14 @@ def main():
     # Run the bot
     application.run_polling()
 
+def run_web_server():
+    port = int(os.environ.get('PORT', 5000))
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", port), handler) as httpd:
+        print(f"Serving at port {port}")
+        httpd.serve_forever()
+
 if __name__ == '__main__':
+    server_thread = threading.Thread(target=run_web_server)
+    server_thread.start()
     main()
