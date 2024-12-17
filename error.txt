@@ -1,0 +1,195 @@
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    chat_id = update.message.chat_id
+    text = update.message.text
+
+    if str(chat_id) == ADMIN_ID:
+        if 'awaiting_task_image' in context.user_data and update.message.photo:
+            context.user_data['task_image'] = update.message.photo[-1].file_id
+            await update.message.reply_text("Image received. Now send the task instructions:")
+            context.user_data['awaiting_task_image'] = False
+            context.user_data['awaiting_task_instructions'] = True
+            
+        elif 'awaiting_task_instructions' in context.user_data and update.message.text:
+            image_id = context.user_data.get('task_image')
+            if image_id:
+                db.save_current_task(image_id, update.message.text)
+                await update.message.reply_text("Task posted successfully!")
+                del context.user_data['task_image']
+                del context.user_data['awaiting_task_instructions']
+                
+                # Broadcast task to all users
+                all_users = db.get_all_users()
+                for user_id in all_users:
+                    try:
+                        await context.bot.send_photo(
+                            chat_id=user_id,
+                            photo=image_id,
+                            caption=update.message.text,
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        print(f"Failed to send task to user {user_id}: {str(e)}")
+
+    elif 'awaiting_pin' in context.user_data and context.user_data['awaiting_pin']:
+        await pin_handler(update, context)
+    elif 'awaiting_pin_set' in context.user_data and context.user_data['awaiting_pin_set']:
+        if text.isdigit() and len(text) == 4:
+            db.save_pin(chat_id, text)
+            keyboard = [[KeyboardButton("Enable PIN 🔑")], [KeyboardButton("Back")]]
+            reply = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            await context.bot.send_message(chat_id=chat_id, text="PIN set successfully 🔑! You can now use it to secure your transactions.\nDo not forget this PIN!\nKeep it somewhere safe\n\nUse the Enable PIN 🔑 button so that you can start using your PIN ",reply_markup=reply)
+            del context.user_data['awaiting_pin_set']
+        else:
+            await context.bot.send_message(chat_id=chat_id, text="Invalid PIN format. Please enter a 4-digit PIN 🔢.")
+    elif 'awaiting_pin_change' in context.user_data and context.user_data['awaiting_pin_change']:
+        current_pin = db.get_pin(chat_id)
+        if text == current_pin:
+            await context.bot.send_message(chat_id=chat_id, text="Please enter your new 4-digit PIN 🔢🔑.")
+            context.user_data['awaiting_pin_change'] = False
+            context.user_data['awaiting_new_pin'] = True
+        else:
+            inline_keyboard = [[InlineKeyboardButton("Cancel ❌", callback_data='cancel')]]
+            markup = InlineKeyboardMarkup(inline_keyboard)
+            await context.bot.send_message(chat_id=chat_id, text="Incorrect PIN ❌. Please enter your current PIN to proceed with changing it.", reply_markup=markup)
+    elif 'awaiting_new_pin' in context.user_data and context.user_data['awaiting_new_pin']:
+        if text.isdigit() and len(text) == 4:
+            db.update_pin(chat_id, text)
+            keyboard = [[KeyboardButton("Back")]]
+            reply = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            await context.bot.send_message(chat_id=chat_id, text="PIN changed successfully!", reply_markup=reply)
+            del context.user_data['awaiting_new_pin']
+        else:
+            await context.bot.send_message(chat_id=chat_id, text="Invalid PIN format. Please enter a new 4-digit PIN.(PIN must be 4 Digits)")
+    else:
+            if 'awaiting_account_details' in context.user_data and context.user_data['awaiting_account_details']:
+                await handle_account_details(update, context, text)
+
+            elif 'awaiting_broadcast' in context.user_data and context.user_data['awaiting_broadcast']:
+                await broadcast_message(update, context, text)
+                del context.user_data['awaiting_broadcast']
+
+            elif 'awaiting_withdrawal_amount' in context.user_data and context.user_data['awaiting_withdrawal_amount']:
+                await handle_withdrawal_amount(update, context, text)
+            elif db.is_user_registered(chat_id):
+                if text == "Referral Link 🎁":
+                    referral_link = f"https://t.me/gratiatechnologybot?start={chat_id}"
+                    share_button = InlineKeyboardButton("Share 📤", switch_inline_query=referral_link)
+                    share_markup = InlineKeyboardMarkup([[share_button]])
+                    await context.bot.send_message(chat_id=chat_id, text=f"Share this link with your friends,\nEarn 1,000 NGN for every successful Referrals: {referral_link} \n And earn 1,000 NGN for each successful referral", reply_markup=share_markup)
+
+                elif text == "Ref Count":
+                    await handle_ref_count(update, context)
+
+                elif text == "Balance 💰":
+                    balances = db.get_user_balances(chat_id)
+                    await show_balance(update, context, balances)
+                elif text == "Affiliate Withdrawal 💸":
+                    await ask_account_details(update, context)
+                elif text == "Task Withdrawal 💸":
+                    await handle_task_withdrawal_request(update, context)
+                elif text == "Profile 👤":
+                    await show_profile(update, context)
+                elif text == "Buy code 🛒":
+                    await handle_buy_code(update, context)
+                elif text == "Channel 📣":
+                    await handle_channel(update, context)
+                elif text == "Help 🆘":
+                    await handle_info(update, context)
+                elif text == "Games ♣":
+                    keyboard = [
+                        [KeyboardButton("Head or Tail 🪙")],
+                        [KeyboardButton("Back")]
+                    ]
+                    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                    await update.message.reply_text("What game 🎮 do you want to play?", reply_markup=reply_markup)
+                
+                elif text == "Security 🔐":
+                    keyboard = [
+                        [KeyboardButton("Set PIN 🔒"), KeyboardButton("Change PIN 🔄")],
+                        [KeyboardButton("Forgot PIN 🤔❓"), KeyboardButton("Back")]
+                    ]
+                    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                    await update.message.reply_text(f"*Welcome, {user.first_name} to GRATIA TECHNOLOGY's security Page*\n\nDo well to set your *PIN* before beginning any operations on GRATIA TECHNOLOGY to ensure security of your funds.\n\nAfter setting your PIN don't forget to enable it so that can be regognized.", reply_markup=reply_markup, parse_mode="Markdown")
+                elif text == "Head or Tail 🪙":
+                    games_today = db.get_games_played_today(chat_id)
+                    if games_today >= 2:
+                        await context.bot.send_message(
+                            chat_id=chat_id, 
+                            text="You've reached your daily limit of 2 games. Come back tomorrow! 🎮",
+                            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Back")]], resize_keyboard=True)
+                        )
+                    else:
+                        keyboard = [[KeyboardButton("Head"), KeyboardButton("Tail")], [KeyboardButton("Back")]]
+                        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                        await context.bot.send_message(
+                            chat_id=chat_id, 
+                            text=f"Choose Head or Tail! (Games played today: {games_today}/2)", 
+                            reply_markup=reply_markup
+                        )
+                elif text == "Play Again 🎲":
+                    games_today = db.get_games_played_today(chat_id)
+                    if games_today >= 2:
+                        await context.bot.send_message(
+                            chat_id=chat_id, 
+                            text="You've reached your daily limit of 2 games. Come back tomorrow! 🎮",
+                            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Back")]], resize_keyboard=True)
+                        )
+                    else:
+                        keyboard = [[KeyboardButton("Head"), KeyboardButton("Tail")], [KeyboardButton("Back")]]
+                        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                        await context.bot.send_message(
+                            chat_id=chat_id, 
+                            text=f"Choose Head or Tail! (Games played today: {games_today}/2)", 
+                            reply_markup=reply_markup
+                        )
+
+                elif text == "Place withdrawal":
+                    await handle_place_withdrawal(update, context)
+                elif text == "Edit account details":
+                    await ask_account_details(update, context)
+                elif text == 'Add Account':
+                    await ask_account_details(update, context)
+                elif text in ["Head", "Tail"]:
+                    await process_bet(update, context, text)
+                elif text == "Back":
+                    await show_main_menu(update, context, user.first_name)
+                elif text == "Task 📋":
+                    await handle_task(update, context)
+                elif text == 'Done Task ✅':
+                    await handle_done_task(update, context)
+                elif text == "Set PIN 🔒":
+                    await handle_set_pin(update, context)
+                elif text == "Change PIN 🔄":
+                    await handle_change_pin(update, context)
+                elif text == "Enable PIN 🔑":
+                    await context.bot.send_message(chat_id=chat_id, text="Your PIN 🔢 Has Been Successfully Enabled, you can make use of it\n\nThe Enable Pin button should be used if your PIN is not accepted")
+                    context.user_data['awaiting_account_details'] = False
+                    context.user_data['awaiting_bet_amount'] = False
+                    context.user_data['awaiting_withdrawal_amount'] = False
+                    context.user_data['awaiting_pin'] = False
+                    context.user_data['awaiting_pin_change'] = False
+                    context.user_data['awaiting_pin_set'] = False
+
+
+                elif text == "Share 📤": 
+                    referral_link = f"https://t.me/gratiatechnologybot?start={chat_id}"
+                    await context.bot.send_message(chat_id=chat_id, text=f"Share this link with your friends, \n Receive 1,000 NGN for every successsful referral: {referral_link}")
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text="Invalid option. Please choose from the main menu.")
+            else:
+                if text in tokens:
+                    if db.is_token_used(text):
+                        await context.bot.send_message(chat_id=chat_id, text="This token has been used. Enter an unused token.")
+                    else:
+                        db.register_user(chat_id, user.first_name, text)
+                        db.mark_token_as_used(text)
+                        referrer_id = context.user_data.get('referrer_id')
+                        if referrer_id:
+                            db.record_referral(referrer_id, chat_id)
+                            db.update_affiliate_balance(referrer_id, 1000)
+                            await context.bot.send_message(chat_id=referrer_id, text=f"You have referred {user.first_name} and earned 1000 NGN Referral Bonus! 😁💲")
+                        await context.bot.send_message(chat_id=chat_id, text="You have been registered and earned a 500 NGN bonus!")
+                        await show_main_menu(update, context, user.first_name)
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text="Invalid token. Please enter a valid 8 digits GRATIA TECHNOLOGY token.")
