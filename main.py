@@ -55,6 +55,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     chat_id = update.message.chat_id
 
+    if chat_id == ADMIN_ID:
+        # Automatically register the admin and show the main menu
+        if not db.is_user_registered(chat_id):
+            db.register_user(chat_id, user.first_name, "ADMIN")
+        await context.bot.send_message(chat_id=chat_id, text="Welcome, Admin! Redirecting to the main menu.")
+        await show_main_menu(update, context, user.first_name)
+        return
+
     if db.is_user_registered(chat_id):
         await show_main_menu(update, context, user.first_name)
     else:
@@ -67,6 +75,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"Hi {user.first_name}, Welcome to GRATIA TECHNOLOGY👏〽\nPlease enter your 10 digits GRATIA TECHNOLOGY Token/Coupon Code to gain access and earn an instant 500 NGN Registration Bonus 🎁.\n\nIf you don't have a GRATIA TECHNOLOGY Coupon code, Please use the \"Buy Code\" button to get one!\n\nAs soon as you login, kindly set your GRATIA TECHNOLOGY Withdrawal PIN 🔢 on the Security 🔐 page\n\nWith this PIN🔢, your GRATIA TECHNOLOGY earnings are secure so don't hesitate to add your PIN.\n\nJoin our Whatsapp/Telegram channel so that you can be up to date about latest\ninfos on your GRATIA TECHNOLOGY earning platform\n\nOnce again, Welcome {user.first_name} ❤!",
             reply_markup=keyboard
         )
+
 
 def generate_start_keyboard():
     keyboard = [
